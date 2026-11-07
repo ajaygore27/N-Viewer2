@@ -1,97 +1,201 @@
+
 package com.example.webviewstarter;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.ValueCallback;
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.view.View;
+import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.ProgressBar;
+import android.widget.Toast;
 
 public class MainActivity extends Activity {
-    // Loads the bundled N-Mirror library (app/src/main/assets/index.html).
-    // To wrap a website you own or are authorized to package instead,
-    // replace this with its https:// URL.
-    private static final String START_URL = "file:///android_asset/index.html";
-    private static final int FILE_REQ = 1001;
+
+    // Replace with a website you own or are authorized to package.
+    private static final String START_URL = "https://netmirror.plus/";
 
     private WebView webView;
-    private ValueCallback<Uri[]> filePathCallback;
+    private ProgressBar progressBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        FrameLayout layout = new FrameLayout(this);
+
         webView = new WebView(this);
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
+        progressBar = new ProgressBar(
+                this, null,
+                android.R.attr.progressBarStyleHorizontal
+        );
+
+        progressBar.setMax(100);
+
+        layout.addView(webView,
+                new FrameLayout.LayoutParams(-1, -1));
+
+        FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(-1, 5);
+
+        layout.addView(progressBar, params);
+
+        setContentView(layout);
+
+        // Cookie support
+        CookieManager cookieManager =
+                CookieManager.getInstance();
+
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        // WebView settings
+        WebSettings settings = webView.getSettings();
+
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setLoadsImagesAutomatically(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        settings.setSupportMultipleWindows(true);
+        settings.setSupportZoom(true);
+        settings.setAllowFileAccess(false);
 
         webView.setWebChromeClient(new WebChromeClient() {
+
             @Override
-            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
-                                             FileChooserParams params) {
-                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
-                filePathCallback = callback;
-                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("video/*");
-                try {
-                    startActivityForResult(Intent.createChooser(intent, "Select video"), FILE_REQ);
-                } catch (Exception e) {
-                    filePathCallback = null;
+            public void onProgressChanged(
+                    WebView view, int progress) {
+
+                progressBar.setProgress(progress);
+
+                progressBar.setVisibility(
+                        progress >= 100 ? View.GONE : View.VISIBLE
+                );
+            }
+
+            // Handle links requesting a new window.
+            @Override
+            public boolean onCreateWindow(
+                    WebView view,
+                    boolean isDialog,
+                    boolean isUserGesture,
+                    android.os.Message resultMsg) {
+
+                if (!isUserGesture) {
                     return false;
                 }
+
+                WebView popupWebView = new WebView(MainActivity.this);
+
+                popupWebView.getSettings().setJavaScriptEnabled(true);
+                popupWebView.getSettings().setDomStorageEnabled(true);
+
+                popupWebView.setWebViewClient(new WebViewClient() {
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(
+                            WebView view,
+                            WebResourceRequest request) {
+
+                        Uri uri = request.getUrl();
+
+                        if ("https".equalsIgnoreCase(uri.getScheme())
+                                || "http".equalsIgnoreCase(uri.getScheme())) {
+
+                            webView.loadUrl(uri.toString());
+                        }
+
+                        popupWebViewCleanup(view);
+                        return true;
+                    }
+                });
+
+                WebView.WebViewTransport transport =
+                        (WebView.WebViewTransport) resultMsg.obj;
+
+                transport.setWebView(popupWebView);
+                resultMsg.sendToTarget();
+
                 return true;
             }
         });
+
         webView.setWebViewClient(new WebViewClient() {
+
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false;
+            public boolean shouldOverrideUrlLoading(
+                    WebView view,
+                    WebResourceRequest request) {
+
+                String scheme = request.getUrl().getScheme();
+
+                return !("https".equalsIgnoreCase(scheme)
+                        || "http".equalsIgnoreCase(scheme));
+            }
+
+            @Override
+            public void onPageStarted(
+                    WebView view, String url, Bitmap favicon) {
+
+                progressBar.setVisibility(View.VISIBLE);
+            }
+
+            @Override
+            public void onPageFinished(
+                    WebView view, String url) {
+
+                progressBar.setVisibility(View.GONE);
+                CookieManager.getInstance().flush();
             }
         });
-        setContentView(webView, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        if (savedInstanceState == null) webView.loadUrl(START_URL);
-        else webView.restoreState(savedInstanceState);
+
+        if (savedInstanceState == null) {
+            webView.loadUrl(START_URL);
+        } else {
+            webView.restoreState(savedInstanceState);
+        }
+    }
+
+    private void popupWebViewCleanup(WebView view) {
+        view.stopLoading();
+        view.destroy();
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == FILE_REQ && filePathCallback != null) {
-            Uri[] result = null;
-            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                result = new Uri[]{data.getData()};
-            }
-            filePathCallback.onReceiveValue(result);
-            filePathCallback = null;
+    public void onBackPressed() {
+
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
         } else {
-            super.onActivityResult(requestCode, resultCode, data);
+            super.onBackPressed();
         }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        webView.saveState(outState);
+
+        if (webView != null) {
+            webView.saveState(outState);
+        }
+
         super.onSaveInstanceState(outState);
     }
 
     @Override
-    public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
-    }
-
-    @Override
     protected void onDestroy() {
-        if (webView != null) webView.destroy();
+
+        if (webView != null) {
+            webView.stopLoading();
+            webView.destroy();
+        }
+
         super.onDestroy();
     }
 }
