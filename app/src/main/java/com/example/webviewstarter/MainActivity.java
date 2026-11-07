@@ -1,10 +1,11 @@
-import android.content.Intent;
+
 package com.example.webviewstarter;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.graphics.Bitmap;
+import android.content.Intent;
 import android.net.Uri;
+import android.graphics.Bitmap;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -18,7 +19,7 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
-    // Replace with a website you own or are authorized to package.
+    // Use a website you own or are authorized to package.
     private static final String START_URL = "https://netmirror.plus/";
 
     private WebView webView;
@@ -31,15 +32,19 @@ public class MainActivity extends Activity {
         FrameLayout layout = new FrameLayout(this);
 
         webView = new WebView(this);
+
         progressBar = new ProgressBar(
-                this, null,
+                this,
+                null,
                 android.R.attr.progressBarStyleHorizontal
         );
 
         progressBar.setMax(100);
 
-        layout.addView(webView,
-                new FrameLayout.LayoutParams(-1, -1));
+        layout.addView(
+                webView,
+                new FrameLayout.LayoutParams(-1, -1)
+        );
 
         FrameLayout.LayoutParams params =
                 new FrameLayout.LayoutParams(-1, 5);
@@ -48,14 +53,16 @@ public class MainActivity extends Activity {
 
         setContentView(layout);
 
-        // Cookie support
+        // Cookie settings
         CookieManager cookieManager =
                 CookieManager.getInstance();
 
         cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
+        cookieManager.setAcceptThirdPartyCookies(
+                webView, true
+        );
 
-        // WebView settings
+        // Browser settings
         WebSettings settings = webView.getSettings();
 
         settings.setJavaScriptEnabled(true);
@@ -63,10 +70,12 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setLoadsImagesAutomatically(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(true);
+        settings.setSupportMultipleWindows(false);
         settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(false);
         settings.setAllowFileAccess(false);
 
+        // Progress bar
         webView.setWebChromeClient(new WebChromeClient() {
 
             @Override
@@ -76,69 +85,14 @@ public class MainActivity extends Activity {
                 progressBar.setProgress(progress);
 
                 progressBar.setVisibility(
-                        progress >= 100 ? View.GONE : View.VISIBLE
+                        progress >= 100
+                                ? View.GONE
+                                : View.VISIBLE
                 );
-            }
-
-            // Handle links requesting a new window.
-            @Override
-            public boolean onCreateWindow(
-                    WebView view,
-                    boolean isDialog,
-                    boolean isUserGesture,
-                    android.os.Message resultMsg) {
-
-                if (!isUserGesture) {
-                    return false;
-                }
-
-                WebView popupWebView = new WebView(MainActivity.this);
-
-                popupWebView.getSettings().setJavaScriptEnabled(true);
-                popupWebView.getSettings().setDomStorageEnabled(true);
-
-                popupWebView.setWebViewClient(new WebViewClient() {
-
-                    @Override
-                    public boolean shouldOverrideUrlLoading(
-                            WebView view,
-                            WebResourceRequest request) {
-                    
-                        Uri uri = request.getUrl();
-                    
-                        if ("https".equalsIgnoreCase(uri.getScheme()) ||
-                            "http".equalsIgnoreCase(uri.getScheme())) {
-                    
-                            try {
-                                Intent intent = new Intent(
-                                    Intent.ACTION_VIEW,
-                                    uri
-                                );
-                                startActivity(intent);
-                            } catch (Exception e) {
-                                Toast.makeText(
-                                    MainActivity.this,
-                                    "No browser available",
-                                    Toast.LENGTH_SHORT
-                                ).show();
-                            }
-                    
-                            return true;
-                        }
-                    
-                        return true;
-                    });
-
-                WebView.WebViewTransport transport =
-                        (WebView.WebViewTransport) resultMsg.obj;
-
-                transport.setWebView(popupWebView);
-                resultMsg.sendToTarget();
-
-                return true;
             }
         });
 
+        // Navigation handling
         webView.setWebViewClient(new WebViewClient() {
 
             @Override
@@ -146,50 +100,90 @@ public class MainActivity extends Activity {
                     WebView view,
                     WebResourceRequest request) {
 
-                String scheme = request.getUrl().getScheme();
+                Uri uri = request.getUrl();
 
-                return !("https".equalsIgnoreCase(scheme)
-                        || "http".equalsIgnoreCase(scheme));
+                String scheme = uri.getScheme();
+
+                if ("http".equalsIgnoreCase(scheme)
+                        || "https".equalsIgnoreCase(scheme)) {
+
+                    String host = uri.getHost();
+
+                    // Keep same website navigation in the app.
+                    if (host != null &&
+                            host.equalsIgnoreCase(
+                                    Uri.parse(START_URL).getHost())) {
+                        return false;
+                    }
+
+                    // Open other websites externally.
+                    try {
+                        Intent intent = new Intent(
+                                Intent.ACTION_VIEW, uri
+                        );
+
+                        startActivity(intent);
+
+                    } catch (Exception e) {
+
+                        Toast.makeText(
+                                MainActivity.this,
+                                "No supported browser found",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+
+                    return true;
+                }
+
+                return true;
             }
 
             @Override
             public void onPageStarted(
-                    WebView view, String url, Bitmap favicon) {
+                    WebView view,
+                    String url,
+                    Bitmap favicon) {
 
                 progressBar.setVisibility(View.VISIBLE);
             }
 
             @Override
             public void onPageFinished(
-                    WebView view, String url) {
+                    WebView view,
+                    String url) {
 
                 progressBar.setVisibility(View.GONE);
                 CookieManager.getInstance().flush();
             }
         });
 
+        // Load website
         if (savedInstanceState == null) {
+
             webView.loadUrl(START_URL);
+
         } else {
+
             webView.restoreState(savedInstanceState);
         }
     }
 
-    private void popupWebViewCleanup(WebView view) {
-        view.stopLoading();
-        view.destroy();
-    }
-
+    // Android back button
     @Override
     public void onBackPressed() {
 
         if (webView != null && webView.canGoBack()) {
+
             webView.goBack();
+
         } else {
+
             super.onBackPressed();
         }
     }
 
+    // Save page state
     @Override
     protected void onSaveInstanceState(Bundle outState) {
 
@@ -200,10 +194,12 @@ public class MainActivity extends Activity {
         super.onSaveInstanceState(outState);
     }
 
+    // Cleanup
     @Override
     protected void onDestroy() {
 
         if (webView != null) {
+
             webView.stopLoading();
             webView.destroy();
         }
