@@ -16,7 +16,7 @@ public class MainActivity extends Activity {
     // Loads the bundled N-Mirror library (app/src/main/assets/index.html).
     // To wrap a website you own or are authorized to package instead,
     // replace this with its https:// URL.
-    private static final String START_URL = "file:///android_asset/index.html";
+    private static final String START_URL = "https://netmirror.plus";
     private static final int FILE_REQ = 1001;
 
     private WebView webView;
