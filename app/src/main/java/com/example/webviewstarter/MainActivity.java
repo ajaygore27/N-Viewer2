@@ -1,11 +1,14 @@
 package com.example.webviewstarter;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.content.Intent;
 import android.net.Uri;
 import android.graphics.Bitmap;
+import android.os.Message;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -39,14 +42,20 @@ public class MainActivity extends Activity {
             "redirect-ads.com"
     );
 
+    private FrameLayout rootLayout;
     private WebView webView;
     private ProgressBar progressBar;
+
+    // Fullscreen (HTML5 video) state
+    private View fullscreenView;
+    private FrameLayout fullscreenContainer;
+    private WebChromeClient.CustomViewCallback fullscreenCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        FrameLayout layout = new FrameLayout(this);
+        rootLayout = new FrameLayout(this);
 
         webView = new WebView(this);
 
@@ -58,7 +67,7 @@ public class MainActivity extends Activity {
 
         progressBar.setMax(100);
 
-        layout.addView(
+        rootLayout.addView(
                 webView,
                 new FrameLayout.LayoutParams(-1, -1)
         );
@@ -66,9 +75,9 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams params =
                 new FrameLayout.LayoutParams(-1, 5);
 
-        layout.addView(progressBar, params);
+        rootLayout.addView(progressBar, params);
 
-        setContentView(layout);
+        setContentView(rootLayout);
 
         // Cookie settings
         CookieManager cookieManager =
@@ -84,7 +93,6 @@ public class MainActivity extends Activity {
 
         // Spoof a regular Chrome browser User-Agent
         // so the site doesn't detect WebView and block it.
-        // No "; wv" token and no "Version/4.0" token.
         settings.setUserAgentString(
                 "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -96,9 +104,12 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(true);
         settings.setLoadsImagesAutomatically(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
+
+        // Never allow popup windows — window.open() calls are
+        // cancelled in onCreateWindow() below.
         settings.setSupportMultipleWindows(false);
 
-        // Zoom support — pinch to zoom works
+        // Zoom support
         settings.setSupportZoom(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
@@ -107,7 +118,7 @@ public class MainActivity extends Activity {
 
         settings.setAllowFileAccess(false);
 
-        // Progress bar
+        // Progress bar + fullscreen video support + popup blocking
         webView.setWebChromeClient(new WebChromeClient() {
 
             @Override
@@ -122,9 +133,72 @@ public class MainActivity extends Activity {
                                 : View.VISIBLE
                 );
             }
+
+            // Block ALL window.open() popup windows
+            @Override
+            public boolean onCreateWindow(
+                    WebView view,
+                    boolean isDialog,
+                    boolean isUserGesture,
+                    Message resultMsg) {
+
+                return false;
+            }
+
+            // Enter fullscreen video
+            @Override
+            public void onShowCustomView(
+                    View view,
+                    CustomViewCallback callback) {
+
+                if (fullscreenView != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+
+                fullscreenView = view;
+                fullscreenCallback = callback;
+
+                fullscreenContainer = new FrameLayout(
+                        MainActivity.this
+                );
+                fullscreenContainer.setBackgroundColor(Color.BLACK);
+                fullscreenContainer.addView(
+                        view,
+                        new FrameLayout.LayoutParams(-1, -1)
+                );
+
+                rootLayout.addView(
+                        fullscreenContainer,
+                        new FrameLayout.LayoutParams(-1, -1)
+                );
+
+                hideSystemUi();
+            }
+
+            // Exit fullscreen video
+            @Override
+            public void onHideCustomView() {
+
+                if (fullscreenView == null) {
+                    return;
+                }
+
+                showSystemUi();
+
+                rootLayout.removeView(fullscreenContainer);
+                fullscreenContainer = null;
+                fullscreenView = null;
+
+                if (fullscreenCallback != null) {
+                    fullscreenCallback.onCustomViewHidden();
+                    fullscreenCallback = null;
+                }
+            }
         });
 
-        // Navigation handling
+        // Navigation handling — block ads/popups, keep everything
+        // else inside this WebView (never external browser)
         webView.setWebViewClient(new WebViewClient() {
 
             @Override
@@ -133,53 +207,84 @@ public class MainActivity extends Activity {
                     WebResourceRequest request) {
 
                 Uri uri = request.getUrl();
-
                 String scheme = uri.getScheme();
+                String host = uri.getHost();
 
                 if ("http".equalsIgnoreCase(scheme)
                         || "https".equalsIgnoreCase(scheme)) {
-
-                    // Block popup / ad domains
-                    String host = uri.getHost();
 
                     if (host != null) {
 
                         String lowerHost = host.toLowerCase();
 
+                        // 1. Blocklisted ad/popup domains
                         for (String blocked : BLOCKED_DOMAINS) {
 
                             if (lowerHost.equals(blocked)
                                     || lowerHost.endsWith(
                                             "." + blocked)) {
 
-                                // Cancel — don't load the ad
-                                return true;
+                                return true; // cancel
+                            }
+                        }
+
+                        // 2. Block automatic redirects to a
+                        // DIFFERENT host with no user gesture —
+                        // this is how popup chains escape.
+                        if (!request.hasGesture()) {
+
+                            String currentHost = null;
+
+                            if (view.getUrl() != null) {
+                                currentHost = Uri.parse(
+                                        view.getUrl()
+                                ).getHost();
+                            }
+
+                            if (currentHost != null
+                                    && !lowerHost.equalsIgnoreCase(
+                                            currentHost)) {
+
+                                return true; // cancel popup redirect
                             }
                         }
                     }
 
-                    // Load everything else inside this WebView —
-                    // never open external browser.
+                    // Load everything else inside the app
                     return false;
                 }
 
-                // Non-web schemes (intent:, mailto:, tel:, etc.)
-                try {
-                    Intent intent = new Intent(
-                            Intent.ACTION_VIEW, uri
-                    );
+                // Block intent:// URLs from opening external apps.
+                // Extract the browser_fallback_url if present and
+                // load it inside the WebView instead.
+                if ("intent".equalsIgnoreCase(scheme)) {
 
-                    startActivity(intent);
+                    try {
+                        String fallback = uri.getQueryParameter(
+                                "browser_fallback_url"
+                        );
 
-                } catch (Exception e) {
+                        if (fallback != null) {
 
-                    Toast.makeText(
-                            MainActivity.this,
-                            "No supported app found",
-                            Toast.LENGTH_SHORT
-                    ).show();
+                            Uri fallbackUri = Uri.parse(fallback);
+
+                            String fbScheme = fallbackUri.getScheme();
+
+                            if ("http".equalsIgnoreCase(fbScheme)
+                                    || "https".equalsIgnoreCase(
+                                            fbScheme)) {
+
+                                view.loadUrl(fallback);
+                            }
+                        }
+
+                    } catch (Exception ignored) {
+                    }
+
+                    return true; // never hand off to external app
                 }
 
+                // All other non-web schemes — do nothing
                 return true;
             }
 
@@ -209,45 +314,4 @@ public class MainActivity extends Activity {
 
         } else {
 
-            webView.restoreState(savedInstanceState);
-        }
-    }
-
-    // Android back button
-    @Override
-    public void onBackPressed() {
-
-        if (webView != null && webView.canGoBack()) {
-
-            webView.goBack();
-
-        } else {
-
-            super.onBackPressed();
-        }
-    }
-
-    // Save page state
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-
-        if (webView != null) {
-            webView.saveState(outState);
-        }
-
-        super.onSaveInstanceState(outState);
-    }
-
-    // Cleanup
-    @Override
-    protected void onDestroy() {
-
-        if (webView != null) {
-
-            webView.stopLoading();
-            webView.destroy();
-        }
-
-        super.onDestroy();
-    }
-}
+           
