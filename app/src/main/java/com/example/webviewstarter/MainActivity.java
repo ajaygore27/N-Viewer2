@@ -1,4 +1,3 @@
-
 package com.example.webviewstarter;
 
 import android.app.Activity;
@@ -64,6 +63,15 @@ public class MainActivity extends Activity {
 
         // Browser settings
         WebSettings settings = webView.getSettings();
+
+        // Spoof a regular Chrome browser User-Agent
+        // so the site doesn't detect WebView and block it.
+        // No "; wv" token and no "Version/4.0" token.
+        settings.setUserAgentString(
+                "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0.0.0 Mobile Safari/537.36"
+        );
 
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
