@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>N-Mirror</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f4f1;--card:#fff;--tx:#1c1b1a;--mu:#6d6862;--ac:#d6283a;--bd:#e4e0db}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e0e10;--card:#1a1a1e;--tx:#f2f0ed;--mu:#9a958f;--ac:#ff4658;--bd:#2c2c32}}
+:root[data-theme="dark"]{--bg:#0e0e10;--card:#1a1a1e;--tx:#f2f0ed;--mu:#9a958f;--ac:#ff4658;--bd:#2c2c32}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);padding:14px 16px 8px;z-index:5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:10}
+h1{margin:0 0 10px;font-size:22px;letter-spacing:-.5px}h1 span{color:var(--ac)}
+input,select,button{font:inherit;color:var(--tx)}
+.search{width:100%;padding:11px 14px;border-radius:12px;border:1px solid var(--bd);background:var(--card)}
+.tabs{display:flex;gap:8px;margin-top:10px;overflow-x:auto}
+.tab{padding:7px 14px;border-radius:20px;border:1px solid var(--bd);background:var(--card);white-space:nowrap;cursor:pointer}
+.tab.on{background:var(--ac);border-color:var(--ac);color:#fff}
+main{padding:8px 16px 90px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden;cursor:pointer}
+.poster{aspect-ratio:2/3;display:flex;align-items:flex-end;padding:10px;font-weight:700;font-size:17px;color:#fff;background-size:cover;background-position:center;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.meta{padding:8px 10px;font-size:13px;color:var(--mu);display:flex;justify-content:space-between}
+.empty{text-align:center;color:var(--mu);margin-top:60px}
+.fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--ac);color:#fff;font-size:30px;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:6}
+dialog{border:1px solid var(--bd);border-radius:18px;background:var(--card);color:var(--tx);width:min(92vw,420px);padding:18px;max-height:90vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
+dialog input,dialog select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg)}
+.row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.btn{flex:1;padding:11px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);cursor:pointer;min-width:90px}
+.btn.p{background:var(--ac);border-color:var(--ac);color:#fff}
+.btn.d{color:var(--ac)}
+video{width:100%;border-radius:12px;background:#000;margin-top:10px}
+.note{font-size:12px;color:var(--mu);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>N<span>·</span>Mirror</h1>
+  <input class="search" id="q" type="search" placeholder="Search your library">
+  <div class="tabs" id="tabs"></div>
+</header>
+<main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden>Nothing here yet.<br>Tap + to add a title.</div></main>
+<button class="fab" id="add" aria-label="Add title">+</button>
+
+<dialog id="dlg">
+  <div id="form">
+    <h2 id="dt" style="margin:0 0 4px;font-size:19px">Add title</h2>
+    <label>Title</label><input id="fT">
+    <div class="row" style="margin-top:0"><div style="flex:1"><label>Year</label><input id="fY" type="number"></div>
+    <div style="flex:1"><label>Genre</label><input id="fG" placeholder="Drama"></div></div>
+    <label>Status</label>
+    <select id="fS"><option value="want">Want to watch</option><option value="watching">Watching</option><option value="done">Watched</option></select>
+    <label>Rating (0–5)</label><input id="fR" type="number" min="0" max="5" step="0.5">
+    <label>Notes</label><input id="fN">
+    <div id="playBox">
+      <label>Play a video from your device</label>
+      <input type="file" id="fF" accept="video/*">
+      <video id="vid" controls playsinline hidden></video>
+      <div class="note">Files play from your device only; re-pick after reopening.</div>
+    </div>
+    <div class="row"><button class="btn p" id="save">Save</button><button class="btn" id="cancel">Close</button><button class="btn d" id="del" hidden>Delete</button></div>
+  </div>
+</dialog>
+
+<script>
+const KEY='nmirror:v1';
+let items=[],filter='all',editId=null;
+try{items=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){items=[]}
+if(!items.length){items=[
+ {id:1,t:'Inception',y:2010,g:'Sci-Fi',s:'done',r:5,n:''},
+ {id:2,t:'Parasite',y:2019,g:'Thriller',s:'want',r:0,n:''},
+ {id:3,t:'Spirited Away',y:2001,g:'Animation',s:'watching',r:0,n:''}]}
+const $=id=>document.getElementById(id);
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(items))}catch(e){}};
+const tabs=[['all','All'],['want','Watchlist'],['watching','Watching'],['done','Watched']];
+function hue(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h}
+function render(){
+  $('tabs').innerHTML=tabs.map(([k,l])=>`<div class="tab ${k===filter?'on':''}" data-k="${k}">${l}</div>`).join('');
+  const q=$('q').value.toLowerCase();
+  const list=items.filter(m=>(filter==='all'||m.s===filter)&&(m.t+' '+m.g).toLowerCase().includes(q));
+  $('grid').innerHTML=list.map(m=>{const h=hue(m.t);
+    return `<div class="card" data-id="${m.id}"><div class="poster" style="background-image:linear-gradient(160deg,hsl(${h},60%,45%),hsl(${(h+50)%360},55%,22%))">${esc(m.t)}</div>
+    <div class="meta"><span>${m.y||''} ${esc(m.g||'')}</span><span>${m.r?'★'+m.r:''}</span></div></div>`}).join('');
+  $('empty').hidden=list.length>0;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function openForm(id){
+  editId=id;const m=items.find(x=>x.id===id)||{};
+  $('dt').textContent=id?'Edit title':'Add title';
+  $('fT').value=m.t||'';$('fY').value=m.y||'';$('fG').value=m.g||'';$('fS').value=m.s||'want';$('fR').value=m.r||'';$('fN').value=m.n||'';
+  $('del').hidden=!id;$('playBox').hidden=!id;
+  $('vid').hidden=true;$('vid').removeAttribute('src');$('fF').value='';
+  $('dlg').showModal();
+}
+$('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){filter=k;render()}};
+$('q').oninput=render;
+$('add').onclick=()=>openForm(null);
+$('grid').onclick=e=>{const c=e.target.closest('.card');if(c)openForm(+c.dataset.id)};
+$('cancel').onclick=()=>{$('vid').pause();$('dlg').close()};
+$('save').onclick=()=>{
+  const t=$('fT').value.trim();if(!t)return;
+  const o={t,y:+$('fY').value||'',g:$('fG').value.trim(),s:$('fS').value,r:+$('fR').value||0,n:$('fN').value.trim()};
+  if(editId)Object.assign(items.find(x=>x.id===editId),o);else items.unshift({id:Date.now(),...o});
+  save();render();$('dlg').close();
+};
+$('del').onclick=()=>{items=items.filter(x=>x.id!==editId);save();render();$('dlg').close()};
+$('fF').onchange=e=>{const f=e.target.files[0];if(!f)return;const v=$('vid');v.src=URL.createObjectURL(f);v.hidden=false;v.play().catch(()=>{})};
+render();
+</script>
+</body>
+</html>

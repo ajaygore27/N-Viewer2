@@ -4,7 +4,7 @@ A minimal Android Studio project that wraps a website you own or are authorized 
 
 ## Configure
 1. Open `app/src/main/java/com/example/webviewstarter/MainActivity.java`.
-2. Replace `https://example.com` in `START_URL` with your authorized website URL.
+2. `START_URL` now loads the bundled N-Mirror page from `app/src/main/assets/index.html`. To wrap a site you own or are authorized to package, replace it with that site's `https://` URL.
 3. Change the app label in `app/src/main/AndroidManifest.xml`.
 4. Optionally change `applicationId` and `namespace` in `app/build.gradle`.
 
