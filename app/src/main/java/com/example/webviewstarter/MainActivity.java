@@ -16,10 +16,28 @@ import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import java.util.Arrays;
+import java.util.List;
+
 public class MainActivity extends Activity {
 
     // Use a website you own or are authorized to package.
     private static final String START_URL = "https://netmirror.plus/";
+
+    // Popup / ad domains to block.
+    // Add new popup domains here as they appear.
+    private static final List<String> BLOCKED_DOMAINS = Arrays.asList(
+            "ay267.com",
+            "doubleclick.net",
+            "googlesyndication.com",
+            "adservice.google.com",
+            "amazon-adsystem.com",
+            "adnxs.com",
+            "popads.net",
+            "popcash.net",
+            "onclickads.net",
+            "redirect-ads.com"
+    );
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -79,8 +97,14 @@ public class MainActivity extends Activity {
         settings.setLoadsImagesAutomatically(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(false);
+
+        // Zoom support — pinch to zoom works
         settings.setSupportZoom(true);
-        settings.setBuiltInZoomControls(false);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+
         settings.setAllowFileAccess(false);
 
         // Progress bar
@@ -115,33 +139,45 @@ public class MainActivity extends Activity {
                 if ("http".equalsIgnoreCase(scheme)
                         || "https".equalsIgnoreCase(scheme)) {
 
+                    // Block popup / ad domains
                     String host = uri.getHost();
 
-                    // Keep same website navigation in the app.
-                    if (host != null &&
-                            host.equalsIgnoreCase(
-                                    Uri.parse(START_URL).getHost())) {
-                        return false;
+                    if (host != null) {
+
+                        String lowerHost = host.toLowerCase();
+
+                        for (String blocked : BLOCKED_DOMAINS) {
+
+                            if (lowerHost.equals(blocked)
+                                    || lowerHost.endsWith(
+                                            "." + blocked)) {
+
+                                // Cancel — don't load the ad
+                                return true;
+                            }
+                        }
                     }
 
-                    // Open other websites externally.
-                    try {
-                        Intent intent = new Intent(
-                                Intent.ACTION_VIEW, uri
-                        );
+                    // Load everything else inside this WebView —
+                    // never open external browser.
+                    return false;
+                }
 
-                        startActivity(intent);
+                // Non-web schemes (intent:, mailto:, tel:, etc.)
+                try {
+                    Intent intent = new Intent(
+                            Intent.ACTION_VIEW, uri
+                    );
 
-                    } catch (Exception e) {
+                    startActivity(intent);
 
-                        Toast.makeText(
-                                MainActivity.this,
-                                "No supported browser found",
-                                Toast.LENGTH_SHORT
-                        ).show();
-                    }
+                } catch (Exception e) {
 
-                    return true;
+                    Toast.makeText(
+                            MainActivity.this,
+                            "No supported app found",
+                            Toast.LENGTH_SHORT
+                    ).show();
                 }
 
                 return true;
