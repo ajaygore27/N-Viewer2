@@ -1,4 +1,4 @@
-
+import android.content.Intent;
 package com.example.webviewstarter;
 
 import android.app.Activity;
@@ -103,19 +103,31 @@ public class MainActivity extends Activity {
                     public boolean shouldOverrideUrlLoading(
                             WebView view,
                             WebResourceRequest request) {
-
+                    
                         Uri uri = request.getUrl();
-
-                        if ("https".equalsIgnoreCase(uri.getScheme())
-                                || "http".equalsIgnoreCase(uri.getScheme())) {
-
-                            webView.loadUrl(uri.toString());
+                    
+                        if ("https".equalsIgnoreCase(uri.getScheme()) ||
+                            "http".equalsIgnoreCase(uri.getScheme())) {
+                    
+                            try {
+                                Intent intent = new Intent(
+                                    Intent.ACTION_VIEW,
+                                    uri
+                                );
+                                startActivity(intent);
+                            } catch (Exception e) {
+                                Toast.makeText(
+                                    MainActivity.this,
+                                    "No browser available",
+                                    Toast.LENGTH_SHORT
+                                ).show();
+                            }
+                    
+                            return true;
                         }
-
-                        popupWebViewCleanup(view);
+                    
                         return true;
-                    }
-                });
+                    });
 
                 WebView.WebViewTransport transport =
                         (WebView.WebViewTransport) resultMsg.obj;
